@@ -1,0 +1,66 @@
+<script src="https://code.jquery.com/jquery-3.2.1.min.js" crossorigin="anonymous"></script>
+
+
+<video width="320" height="240" controls="controls">
+  Your browser does not support the video tag.
+</video>
+
+<script>
+  var video = document.querySelector('video');
+
+  var assetURL = '1.webm'
+  // Need to be specific for Blink regarding codecs
+  // ./mp4info frag_bunny.mp4 | grep Codec
+  var mimeCodec = 'video/webm; codecs="vorbis,vp8"';
+
+  if ('MediaSource' in window && MediaSource.isTypeSupported(mimeCodec)) {
+    var mediaSource = new MediaSource();
+    //console.log(mediaSource.readyState); // closed
+    video.src = URL.createObjectURL(mediaSource);
+    mediaSource.addEventListener('sourceopen', sourceOpen);
+  } else {
+    console.error('Unsupported MIME type or codec: ', mimeCodec);
+  }
+
+  var i = 0
+  function sourceOpen(_) {
+    //console.log(this.readyState); // open
+    var mediaSource = this;
+    var sourceBuffer = mediaSource.addSourceBuffer(mimeCodec);
+
+    sourceBuffer.addEventListener('updateend', function (_) {
+        // mediaSource.endOfStream();
+        console.log(mediaSource.readyState); // ended
+      });
+
+
+
+
+    fetchAB(assetURL, function (buf) {
+      console.log(buf.length)
+      sourceBuffer.appendBuffer(buf);
+      if (i++ >= 1) {
+        video.play();
+      }
+    });
+  };
+
+  var xhr
+  function fetchAB(url, cb) {
+    xhr = new XMLHttpRequest;
+    xhr.open('get', url);
+    xhr.responseType = 'arraybuffer';
+    var start = 0;
+    const plus = 100 * 1024;
+    xhr.onload = function () {
+      setInterval(
+        function () {
+          cb(xhr.response.slice(start, start + plus));
+          start += plus
+          console.log(start)
+        }, 500)
+
+    };
+    xhr.send();
+  };
+</script>

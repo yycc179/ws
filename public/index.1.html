@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta/css/bootstrap.min.css" integrity="sha384-/Y6pD6FV/Vv2HJnA6t+vslU6fwYXjCFtcEpHbNJ0lyAFsXTsjBbfaDjzALeQsN6M"
+	 crossorigin="anonymous">
+	<script src="https://code.jquery.com/jquery-3.2.1.min.js" crossorigin="anonymous"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.11.0/umd/popper.min.js" integrity="sha384-b/U6ypiBEHpOf/4+1nzFpr53nxSS+GLCkfwBdFNTxtclqqenISfwAzpKaMNFNmj4"
+	 crossorigin="anonymous"></script>
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta/js/bootstrap.min.js" integrity="sha384-h0AbiXch4ZDo7tp9hKZ4TsHbi047NrKGLO3SEJAg45jXxnGIfYzk4Si90RDIqNm1"
+	 crossorigin="anonymous"></script>
+	<script src="https://unpkg.com/vue"></script>
+
+</head>
+
+<body>
+	<nav class="navbar navbar-dark  bg-primary ">
+		<a class="navbar-brand" href="#">Remote Debug</a>
+	</nav>
+
+	<div class="container-fluid" style="margin-top:10px" id='app'>
+		<div class="row ">
+			<div class="col-2">
+				<div class="list-group" id="device" v-for='d in list'>
+					<button type="button" class="list-group-item list-group-item-action" v-bind:value='d.mac' v-bind:class='[d.mac === current ? "active" : ""]'
+					 @click="device_select(d)">
+						{{d.name}}
+					</button>
+				</div>
+				<button type="button" class="btn btn-secondary btn-lg btn-block" style="margin-top: 20px;" @click="devices_refresh">Refresh</button>
+			</div>
+
+			<div class="col-10">
+				<textarea class="form-control" rows="30" id='info'>{{slog}}</textarea>
+
+				<div class="btn-group " role="group" style="float:right; margin-bottom:25px">
+					<button type="button" class="btn btn-secondary" onclick="Save()">Save</button>
+					<button type="button" class="btn btn-secondary" @click="debug_clear">CLear</button>
+					<button type="button" class="btn btn-secondary" @click="debug_start">Start</button>
+					<button type="button" class="btn btn-secondary" @click="debug_pause">Pause</button>
+				</div>
+
+				<div class=" ">
+					<input type="text" class="form-control " placeholder="mon" v-model.string='cmd' @keyup.enter='cmd_send'>
+					<button type="button" class="btn btn-secondary" @click="cmd_send" style="float:right">Send</button>
+				</div>
+
+			</div>
+		</div>
+
+	</div>
+
+	<script>
+		const MAX_DEBUG_SIZE = 50 * 1024
+		const MAX_DEBUG_FILE_SIZE = 10 * 1024 * 1024
+
+		let ws
+
+		var app = new Vue({
+			el: '#app',
+			data: {
+				log: '',
+				slog: '',
+				list: [],
+				current: null,
+				cmd: ''
+			},
+			created: function () {
+				this.devices_refresh();
+			},
+			methods: {
+				devices_refresh: function () {
+					$.getJSON('/devices', res => {
+						this.list = res.devices
+					})
+				},
+
+				debug_start: function () {
+					if (!ws) return;
+
+					var t = $('textarea')
+
+					ws.onerror = e => {
+						this.log = 'Connect error...' + ws.url
+					}
+
+					ws.onmessage = e => {
+						this.log += e.data
+						this.slog += e.data
+
+						if (this.slog.length > MAX_DEBUG_SIZE) {
+							this.slog = this.slog.slice(-MAX_DEBUG_SIZE)
+						}
+
+						if (this.log.length > MAX_DEBUG_FILE_SIZE) {
+							this.log = this.log.slice(-MAX_DEBUG_FILE_SIZE)
+						}
+
+						t.scrollTop(t[0].scrollHeight)
+					}
+
+				},
+
+				debug_pause: function () {
+					if (ws) ws.onmessage = null
+				},
+
+				debug_clear: function () {
+					this.slog = ''
+				},
+
+				device_select: function (d) {
+					this.current = d.mac;
+					console.log(d.name)
+					this.slog = '';
+					if (ws) ws.close()
+					ws = new WebSocket(`ws://${location.hostname}:8888/debug?mac=${d.mac}`)
+					this.debug_start()
+				},
+
+				cmd_send: function () {
+					if (ws) ws.send(this.cmd)
+				},
+			}
+		})
+
+		function doSave(value, type, name) {
+			var blob;
+			if (typeof window.Blob == "function") {
+				blob = new Blob([value], { type: type });
+			} else {
+				var BlobBuilder = window.BlobBuilder || window.MozBlobBuilder || window.WebKitBlobBuilder || window.MSBlobBuilder;
+				var bb = new BlobBuilder();
+				bb.append(value);
+				blob = bb.getBlob(type);
+			}
+			var URL = window.URL || window.webkitURL;
+			var bloburl = URL.createObjectURL(blob);
+			var anchor = document.createElement("a");
+			if ('download' in anchor) {
+				anchor.style.visibility = "hidden";
+				anchor.href = bloburl;
+				anchor.download = name;
+				document.body.appendChild(anchor);
+				var evt = document.createEvent("MouseEvents");
+				evt.initEvent("click", true, true);
+				anchor.dispatchEvent(evt);
+				document.body.removeChild(anchor);
+			} else if (navigator.msSaveBlob) {
+				navigator.msSaveBlob(blob, name);
+			} else {
+				location.href = bloburl;
+			}
+		}
+
+		function Save() {
+			var d = $('#device').children().filter(".active")[0];
+			if (d) {
+				doSave(log, "text/latex", `${d.outerText}_${Date.now()}.log`);
+			}
+		}
+	</script>
+</body>
+
+</html>
